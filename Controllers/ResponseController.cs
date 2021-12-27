@@ -15,12 +15,12 @@ namespace Proxy.Controllers
 
         static Dictionary<string, string> CountryCodeToCurrency = new();
 
-        [HttpGet("{AppId},{CountryCode},{Language},{BypassCache}")]
-        public async Task<JsonResult> GetResponse(int AppId, string CountryCode, string Language, bool BypassCache = false)
+        [HttpGet("{AppId},{CountryCode},{Language}")]
+        public async Task<JsonResult> GetResponse(int AppId, string CountryCode, string Language)
         {
             using (HttpClient http = new HttpClient())
             {
-                if (Cache.ContainsKey(CountryCode) && !BypassCache) 
+                if (Cache.ContainsKey(CountryCode)) 
                 {
                     if (Cache[CountryCode].ContainsKey(AppId))
                     {
