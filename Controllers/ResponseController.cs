@@ -1,33 +1,44 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 
-#pragma warning disable CS8602 // Dereference of a possibly null reference.
-
 namespace Proxy.Controllers
 {
     [Route("api/requests/")]
     [ApiController]
     public class ResponseController : Controller
     {
-        static Dictionary<string, Dictionary<int, JsonResult>> Cache = new();
+        static JsonResult? EmptyResponse = null;
 
-        static JsonResult? GenericError = null;
+        static readonly ResponseCache Cache = new ResponseCache();
 
-        [HttpGet("{AppId},{CountryCode},{Language}.{BypassCache?}")]
-        public async Task<JsonResult> GetResponse(int AppId, string CountryCode, string Language, bool? BypassCache = null)
+        [HttpGet("{AppId},{CountryCode},{Language}")]
+        public async Task<JsonResult> GetResponse(int AppId, string CountryCode, string Language)
         {
             using (HttpClient http = new())
             {
-                if (GenericError == null)
-                    GenericError = Json("response:{}");
+                if (EmptyResponse == null)
+                    EmptyResponse = Json("response:{}");
 
-                if (BypassCache == null || BypassCache == false)
+                Response? PotentiallyCachedValue = Cache.GetFromCache(CountryCode, AppId);
+                if (PotentiallyCachedValue != null)
                 {
-                    if (Cache.ContainsKey(CountryCode))
+                    ResponseContainer CachedResponse = new ResponseContainer(PotentiallyCachedValue);
+                    if (CachedResponse.Response != null)
                     {
-                        if (Cache[CountryCode].ContainsKey(AppId))
+                        if (CachedResponse.Response.Apps != null && CachedResponse.Response.Apps.Length > 0)
                         {
-                            return Cache[CountryCode][AppId]; // Return cached result.
+                            if (CachedResponse.Response.Apps[0].OriginalPrice == null)  // Delisted song.
+                            {
+                                return EmptyResponse;
+                            }
+                            else
+                            {
+                                return Json(CachedResponse);
+                            }
+                        }
+                        else
+                        {
+                            return EmptyResponse;
                         }
                     }
                 }
@@ -35,25 +46,19 @@ namespace Proxy.Controllers
                 ResponseContainer? steamResponse = await http.GetFromJsonAsync<ResponseContainer>($"http://api.steampowered.com/service/Store/GetAppInfo/?input_json={{%22appids%22:[{AppId}],%22country_code%22:%22{CountryCode}%22,%22language%22:%22{Language}%22,%22query_app_title%22:true,%22query_package_price%22:true,%22query_app_description%22:true}}");
 
                 if (steamResponse == null || steamResponse.Response == null || steamResponse.Response.Apps == null || steamResponse.Response?.Apps?.Length == 0)
-                    return GenericError;
-
-                Debug.WriteLine($"Sent response for {AppId} - {steamResponse.Response.Apps[0].Title}");
+                    return EmptyResponse;
 
                 JsonResult result = Json(steamResponse);
 
-                if (steamResponse.Response?.Apps[0].OriginalPrice == null) // Song has been delisted, and we need to fake the data so the shop doesn't break.
+                if (steamResponse.Response?.Apps.Length > 0)
                 {
-                    result = GenericError;
-                }
+                    Cache.AddToCache(CountryCode, AppId, steamResponse.Response.Apps[0]);
+                    Debug.WriteLine($"Cached {AppId} in {CountryCode} for {steamResponse.Response.Apps[0].Title}");
 
-                if (!Cache.ContainsKey(CountryCode)) // We haven't seen this country code before.
-                {
-                    Cache.Add(CountryCode, new Dictionary<int, JsonResult>() { { AppId, result } });
-                }
-
-                else if (!Cache[CountryCode].ContainsKey(AppId)) // We've seen this country code, but not this AppId.
-                {
-                    Cache[CountryCode].Add(AppId, result);
+                    if (steamResponse.Response?.Apps[0].OriginalPrice == null) // DLC has been delisted, send an empty response.
+                    {
+                        result = EmptyResponse;
+                    }
                 }
 
                 return result;

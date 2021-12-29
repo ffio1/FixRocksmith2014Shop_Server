@@ -7,6 +7,17 @@ namespace Proxy
     {
         [JsonPropertyName("response")]
         public AppsContainer? Response { get; set; }
+
+        public ResponseContainer()
+        {
+        }
+
+        public ResponseContainer(Response SteamResponse)
+        {
+            Response = new AppsContainer();
+            Response.Apps = new Response[1];
+            Response.Apps[0] = SteamResponse;
+        }
     }
 
     [Serializable]
@@ -42,5 +53,7 @@ namespace Proxy
 
         [JsonPropertyName("app_description")]
         public string? Description { get; set; }
+
+        public DateTime? LastCachedAt { get; set; }
     }
 }
